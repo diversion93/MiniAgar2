@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniAgar - Multiplayer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen">
+        <div class="menu-container">
+            <h1 class="game-title">MiniAgar</h1>
+            <p class="game-subtitle">Multiplayer Mode</p>
+            <div class="input-group">
+                <input type="text" id="playerName" placeholder="Dein Name" maxlength="15" autocomplete="off">
+                <button id="startButton" class="btn btn-primary">Spiel Beitreten</button>
+            </div>
+            <div class="menu-links">
+                <a href="/" class="btn btn-secondary">Singleplayer</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen hidden">
+        <!-- HUD -->
+        <div class="hud">
+            <div class="hud-item">
+                <span class="hud-label">Spieler:</span>
+                <span id="playerNameDisplay">-</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Punkte:</span>
+                <span id="scoreDisplay">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Masse:</span>
+                <span id="massDisplay">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Zeit:</span>
+                <span id="timeDisplay">00:00</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">FPS:</span>
+                <span id="fpsDisplay">60</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Online:</span>
+                <span id="playerCountDisplay">0</span>
+            </div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="leaderboard">
+            <h3>Bestenliste</h3>
+            <div id="leaderboardList"></div>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Minimap -->
+        <canvas id="minimap"></canvas>
+
+        <!-- Mobile Controls -->
+        <div id="mobileControls" class="mobile-controls hidden">
+            <!-- Virtual Buttons -->
+            <div class="virtual-buttons">
+                <button id="splitButton" class="virtual-btn split-btn">
+                    <span>SPLIT</span>
+                    <div class="btn-ripple"></div>
+                </button>
+                <button id="ejectButton" class="virtual-btn eject-btn">
+                    <span>EJECT</span>
+                    <div class="btn-ripple"></div>
+                </button>
+            </div>
+
+            <!-- Touch Settings -->
+            <div class="touch-controls">
+                <button id="settingsToggle" class="settings-btn">⚙️</button>
+                <button id="joystickToggle" class="joystick-btn">🕹️</button>
+            </div>
+
+            <!-- Touch Settings Panel -->
+            <div id="touchSettings" class="touch-settings hidden">
+                <div class="settings-header">
+                    <h4>Touch-Einstellungen</h4>
+                    <button id="closeSettings" class="close-btn">×</button>
+                </div>
+                <div class="settings-content">
+                    <div class="setting-item">
+                        <label for="sensitivitySlider">Empfindlichkeit:</label>
+                        <div class="slider-container">
+                            <input type="range" id="sensitivitySlider" min="0.5" max="2.0" step="0.1" value="1.2">
+                            <span id="sensitivityValue">1.2</span>
+                        </div>
+                        <div class="sensitivity-indicator">
+                            <div class="sensitivity-bar"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="hapticToggle" checked>
+                            Haptisches Feedback
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" id="visualFeedbackToggle" checked>
+                            Visuelles Feedback
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Virtual Joystick -->
+            <div id="touchJoystick" class="touch-joystick hidden">
+                <div class="joystick-outer">
+                    <div class="joystick-inner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="pauseMenu" class="overlay hidden">
+        <div class="menu-container">
+            <h2>Spiel Pausiert</h2>
+            <button id="resumeButton" class="btn btn-primary">Fortsetzen</button>
+            <button id="restartButton" class="btn btn-secondary">Neustart</button>
+            <button id="mainMenuButton" class="btn btn-secondary">Hauptmenü</button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="overlay hidden">
+        <div class="menu-container">
+            <h2>Spiel Beendet</h2>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">Endpunktzahl:</span>
+                    <span id="finalScore" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Spielzeit:</span>
+                    <span id="finalTime" class="stat-value">00:00</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Endmasse:</span>
+                    <span id="finalMass" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Spieler besiegt:</span>
+                    <span id="playersKilled" class="stat-value">0</span>
+                </div>
+            </div>
+            <button id="playAgainButton" class="btn btn-primary">Nochmal Spielen</button>
+            <button id="backToMenuButton" class="btn btn-secondary">Hauptmenü</button>
+        </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status hidden">
+        <span id="connectionText">Verbindung wird hergestellt...</span>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="multiplayer-client.js"></script>
+</body>
+</html>
