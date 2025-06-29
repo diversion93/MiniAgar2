@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>MiniAgar - Browser Spiel mit Computer Bots</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen">
+        <div class="start-container">
+            <h1 class="game-title">
+                <span class="title-mini">Mini</span><span class="title-agar">Agar</span>
+            </h1>
+            <p class="game-subtitle">Browser Spiel mit Computer Bots</p>
+            
+            <div class="start-form">
+                <input type="text" id="playerName" placeholder="Spielername eingeben..." maxlength="15" autocomplete="off">
+                <button id="startButton" class="start-btn">
+                    <span class="btn-text">Spiel starten</span>
+                    <span class="btn-glow"></span>
+                </button>
+            </div>
+            
+            <div class="game-info">
+                <div class="info-section">
+                    <h3>🎮 Steuerung</h3>
+                    <p><strong>Desktop:</strong> Maus oder Pfeiltasten</p>
+                    <p><strong>Mobile:</strong> Tippen zum Bewegen</p>
+                    <p><strong>Aktionen:</strong> Space (Split), W (Eject)</p>
+                    <p><strong>ESC:</strong> Menü öffnen</p>
+                </div>
+                
+                <div class="info-section">
+                    <h3>🎯 Spielziel</h3>
+                    <p>Fressen Sie Nahrung und kleinere Zellen</p>
+                    <p>Vermeiden Sie größere Gegner</p>
+                    <p>Werden Sie zur größten Zelle!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen hidden">
+        <!-- HUD -->
+        <div id="hud" class="hud">
+            <!-- Player Info -->
+            <div class="player-info">
+                <div class="info-item">
+                    <span class="info-label">Spieler:</span>
+                    <span id="playerNameDisplay" class="info-value"></span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Punkte:</span>
+                    <span id="scoreDisplay" class="info-value">0</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Masse:</span>
+                    <span id="massDisplay" class="info-value">10</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Zeit:</span>
+                    <span id="timeDisplay" class="info-value">00:00</span>
+                </div>
+            </div>
+
+            <!-- Leaderboard -->
+            <div class="leaderboard">
+                <h3 class="leaderboard-title">🏆 Bestenliste</h3>
+                <div id="leaderboardList" class="leaderboard-list">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+
+            <!-- FPS Counter -->
+            <div class="fps-counter">
+                <span id="fpsDisplay">FPS: 60</span>
+            </div>
+        </div>
+
+        <!-- Mini Map -->
+        <div class="minimap-container">
+            <canvas id="minimap" width="150" height="150"></canvas>
+            <div class="minimap-label">Mini-Map</div>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Enhanced Mobile Touch Controls -->
+        <div id="mobileControls" class="mobile-controls hidden">
+            <!-- Virtual Buttons with Enhanced Feedback -->
+            <button id="splitButton" class="virtual-btn split-btn" aria-label="Split Cell">
+                <span class="btn-icon">⚡</span>
+                <span class="btn-label">Split</span>
+                <div class="btn-ripple"></div>
+            </button>
+            <button id="ejectButton" class="virtual-btn eject-btn" aria-label="Eject Mass">
+                <span class="btn-icon">💥</span>
+                <span class="btn-label">Eject</span>
+                <div class="btn-ripple"></div>
+            </button>
+            
+            <!-- Enhanced Touch Joystick -->
+            <div id="touchJoystick" class="touch-joystick hidden" aria-label="Virtual Joystick">
+                <div class="joystick-outer">
+                    <div class="joystick-inner">
+                        <div class="joystick-center-dot"></div>
+                    </div>
+                    <div class="joystick-deadzone-indicator"></div>
+                </div>
+                <div class="joystick-label">Precise Control</div>
+                <div class="joystick-sensitivity-indicator">
+                    <div class="sensitivity-bar"></div>
+                </div>
+            </div>
+            
+            <!-- Enhanced Joystick Toggle -->
+            <button id="joystickToggle" class="joystick-toggle" aria-label="Toggle Joystick Mode">
+                <span class="toggle-icon">🎮</span>
+                <div class="toggle-indicator"></div>
+            </button>
+            
+            <!-- Touch Settings Panel (Hidden by default) -->
+            <div id="touchSettings" class="touch-settings hidden">
+                <div class="settings-header">
+                    <h3>Touch Controls</h3>
+                    <button id="closeSettings" class="close-settings">×</button>
+                </div>
+                <div class="settings-content">
+                    <div class="setting-item">
+                        <label for="sensitivitySlider">Sensitivity</label>
+                        <input type="range" id="sensitivitySlider" min="0.5" max="2.0" step="0.1" value="1.2">
+                        <span id="sensitivityValue">1.2</span>
+                    </div>
+                    <div class="setting-item">
+                        <label for="hapticToggle">Haptic Feedback</label>
+                        <input type="checkbox" id="hapticToggle" checked>
+                    </div>
+                    <div class="setting-item">
+                        <label for="visualFeedbackToggle">Visual Feedback</label>
+                        <input type="checkbox" id="visualFeedbackToggle" checked>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Settings Toggle Button -->
+            <button id="settingsToggle" class="settings-toggle" aria-label="Touch Settings">
+                <span class="settings-icon">⚙️</span>
+            </button>
+        </div>
+
+        <!-- Pause Menu -->
+        <div id="pauseMenu" class="pause-menu hidden">
+            <div class="pause-content">
+                <h2>Spiel pausiert</h2>
+                <button id="resumeButton" class="menu-btn">Fortsetzen</button>
+                <button id="restartButton" class="menu-btn">Neu starten</button>
+                <button id="mainMenuButton" class="menu-btn">Hauptmenü</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen hidden">
+        <div class="gameover-container">
+            <h1 class="gameover-title">Game Over</h1>
+            <div class="final-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Endpunktzahl:</span>
+                    <span id="finalScore" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Überlebenszeit:</span>
+                    <span id="finalTime" class="stat-value">00:00</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Größte Masse:</span>
+                    <span id="finalMass" class="stat-value">10</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Bots eliminiert:</span>
+                    <span id="botsKilled" class="stat-value">0</span>
+                </div>
+            </div>
+            
+            <div class="gameover-buttons">
+                <button id="playAgainButton" class="start-btn">
+                    <span class="btn-text">Nochmal spielen</span>
+                    <span class="btn-glow"></span>
+                </button>
+                <button id="backToMenuButton" class="menu-btn">Hauptmenü</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Script -->
+    <script src="game.js"></script>
+</body>
+</html>
