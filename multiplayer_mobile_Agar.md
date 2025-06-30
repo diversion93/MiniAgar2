@@ -13,7 +13,7 @@
 - **Low-Latency**: Optimiert für mobile Netzwerke
 
 ### Technische Ziele
-- **20+ gleichzeitige Spieler** pro Raspberry Pi 4
+- **30 gleichzeitige Spieler** pro Raspberry Pi 4
 - **< 50ms Latenz** im lokalen Netz
 - **60 FPS** auf modernen Smartphones
 - **< 2MB Datenverbrauch** pro 10-Minuten Session
@@ -28,57 +28,31 @@
 ```
 [] Touch-Steuerung implementieren
     ├── Virtual Joystick (Canvas-basiert)
-    ├── Multi-Touch Support
-    ├── Haptic Feedback (Vibration)
-    └── Gesture Recognition (Pinch-to-Zoom)
 
 [ ] Responsive Design überarbeiten
     ├── Mobile-First CSS Media Queries
     ├── Dynamic Viewport Scaling
-    ├── Portrait/Landscape Modi
-    └── Notch/Safe Area Support (iPhone)
+    
 
 [ ] Performance für Mobile optimieren
     ├── Canvas Rendering für niedrige DPI
-    ├── Texture Compression
-    ├── Battery-Saving Mode
-    └── Memory Management
+ 
 ```
 
 #### 📱 **Mobile UX/UI (Woche 2)**
 ```
 [ ] Touch-optimierte Bedienung
     ├── Größere Touch-Targets (44px minimum)
-    ├── Swipe-Gesten für Menu
-    ├── Double-Tap Actions
-    └── Long-Press Kontextmenü
-
-[ ] Mobile-spezifische Features
-    ├── Offline-Modus (PWA)
-    ├── Push Notifications
-    ├── Home Screen Installation
-    └── Background Play Support
-
-[ ] Accessibility für Mobile
-    ├── Screen Reader Support
-    ├── High Contrast Mode
-    ├── Font Size Scaling
-    └── Color Blind Support
+    
 ```
 
 #### 🔧 **Progressive Web App (Woche 3)**
 ```
-[ ] PWA Implementation
-    ├── Service Worker (Caching)
-    ├── Web App Manifest
-    ├── Offline Fallback Pages
-    └── App-like Navigation
 
 [ ] Mobile Browser Optimization
     ├── iOS Safari Fixes
     ├── Android Chrome Optimization
-    ├── Samsung Internet Compatibility
-    └── Opera Mini Support
+    
 ```
 
 ---
@@ -88,52 +62,29 @@
 #### 🏗️ **Server-Architektur (Woche 4-5)**
 ```
 [ ] Node.js Game Server Setup
-    ├── Express.js REST API
     ├── Socket.io WebSocket Server
     ├── Game State Management
     └── Player Session Handling
 
-[ ] Multiplayer Game Logic
-    ├── Authoritative Server (Anti-Cheat)
-    ├── Client Prediction
-    ├── Server Reconciliation
-    └── Lag Compensation
 
-[ ] Database Integration
-    ├── Redis (Session Storage)
-    ├── SQLite (User Stats)
-    ├── Leaderboards
-    └── Player Profiles
 ```
 
 #### 📡 **Network Optimization (Woche 6)**
 ```
-[ ] Protocol Optimization
-    ├── Binary Protocol (MessagePack)
-    ├── Delta Compression
-    ├── Interest Management
-    └── Bandwidth Limiting
 
 [ ] Mobile Network Handling
     ├── Connection Retry Logic
-    ├── 3G/4G/5G Adaptation
-    ├── WiFi Switch Detection
     └── Graceful Disconnection
 ```
 
-#### 🔐 **Security & Anti-Cheat (Woche 7)**
+#### 🔐 **Security  (Woche 7)**
 ```
 [ ] Server-Side Validation
     ├── Movement Validation
     ├── Action Rate Limiting
     ├── Input Sanitization
-    └── Bot Detection
+    └
 
-[ ] Authentication System
-    ├── Guest Play (Anonymous)
-    ├── Simple Account System
-    ├── JWT Token Management
-    └── Session Security
 ```
 
 ---
@@ -163,23 +114,7 @@
 
 #### ⚙️ **Server-Optimierung (Woche 9-10)**
 ```
-[ ] Performance Tuning
-    ├── Memory Limits setzen
-    ├── CPU Affinity konfigurieren
-    ├── Swap optimieren
-    └── GPU Memory Split anpassen
 
-[ ] Netzwerk-Konfiguration
-    ├── Port Forwarding (Router)
-    ├── Firewall Rules (ufw)
-    ├── Static IP Assignment
-    └── DDNS Setup (optional)
-
-[ ] Monitoring & Logging
-    ├── Prometheus Metrics
-    ├── Log Rotation
-    ├── Health Check Endpoints
-    └── Automatic Restart on Crash
 ```
 
 ---

@@ -20,12 +20,14 @@ app.use(express.static(__dirname));
 // Game state
 const gameState = {
     players: new Map(),
+    bots: [],
     food: [],
     viruses: [],
     worldWidth: 2000,
     worldHeight: 2000,
     maxFood: 200,
-    virusCount: 8
+    virusCount: 8,
+    botCount: 15
 };
 
 // Game configuration
@@ -48,7 +50,10 @@ function initializeGameWorld() {
         spawnVirus();
     }
     
-    console.log(`Game world initialized: ${gameState.food.length} food, ${gameState.viruses.length} viruses`);
+    // Spawn initial bots
+    createBots();
+    
+    console.log(`Game world initialized: ${gameState.food.length} food, ${gameState.viruses.length} viruses, ${gameState.bots.length} bots`);
 }
 
 function spawnFood() {
@@ -122,6 +127,282 @@ function removePlayer(socketId) {
     gameState.players.delete(socketId);
 }
 
+// Bot management
+function createBots() {
+    const botTypes = ['aggressive', 'passive', 'balanced', 'opportunistic'];
+    const botColors = {
+        aggressive: '#ff4444',
+        passive: '#4444ff',
+        balanced: '#44ff44',
+        opportunistic: '#ffff44'
+    };
+    
+    for (let i = 0; i < gameState.botCount; i++) {
+        const type = botTypes[i % botTypes.length];
+        const bot = {
+            id: `bot_${i}`,
+            name: `Bot${i + 1}`,
+            x: Math.random() * gameState.worldWidth,
+            y: Math.random() * gameState.worldHeight,
+            mass: 20 + Math.random() * 4,
+            radius: Math.sqrt((20 + Math.random() * 4) / Math.PI) * 3,
+            color: botColors[type],
+            vx: 0,
+            vy: 0,
+            alive: true,
+            score: 0,
+            type: 'bot',
+            botType: type,
+            target: null,
+            lastDirectionChange: 0,
+            wanderAngle: Math.random() * Math.PI * 2,
+            aggressionLevel: getAggressionLevel(type),
+            fearLevel: getFearLevel(type)
+        };
+        gameState.bots.push(bot);
+    }
+}
+
+function getAggressionLevel(botType) {
+    switch (botType) {
+        case 'aggressive': return 0.9;
+        case 'passive': return 0.1;
+        case 'balanced': return 0.5;
+        case 'opportunistic': return 0.3;
+        default: return 0.5;
+    }
+}
+
+function getFearLevel(botType) {
+    switch (botType) {
+        case 'aggressive': return 0.2;
+        case 'passive': return 0.8;
+        case 'balanced': return 0.5;
+        case 'opportunistic': return 0.6;
+        default: return 0.5;
+    }
+}
+
+function updateBots() {
+    const currentTime = Date.now();
+    const deltaTime = 1 / config.tickRate;
+    
+    gameState.bots.forEach(bot => {
+        if (!bot.alive) return;
+        
+        // Find target
+        findBotTarget(bot, currentTime);
+        
+        // Move towards target
+        moveBotTowardsTarget(bot, deltaTime);
+        
+        // Update position
+        bot.x += bot.vx * deltaTime * 60;
+        bot.y += bot.vy * deltaTime * 60;
+        
+        // Apply friction
+        bot.vx *= 0.98;
+        bot.vy *= 0.98;
+        
+        // Keep in bounds
+        bot.x = Math.max(bot.radius, Math.min(gameState.worldWidth - bot.radius, bot.x));
+        bot.y = Math.max(bot.radius, Math.min(gameState.worldHeight - bot.radius, bot.y));
+        
+        // Update radius based on mass
+        bot.radius = Math.sqrt(bot.mass / Math.PI) * 3;
+    });
+}
+
+function findBotTarget(bot, currentTime) {
+    // Change target every 2-5 seconds or if current target is invalid
+    if (currentTime - bot.lastDirectionChange > 2000 + Math.random() * 3000 || 
+        !isValidBotTarget(bot.target)) {
+        
+        bot.target = selectBestBotTarget(bot);
+        bot.lastDirectionChange = currentTime;
+    }
+}
+
+function isValidBotTarget(target) {
+    if (!target) return false;
+    
+    if (target.type === 'food') {
+        return gameState.food.includes(target);
+    } else if (target.type === 'bot') {
+        return gameState.bots.includes(target) && target.alive;
+    } else if (target.type === 'player') {
+        return Array.from(gameState.players.values()).includes(target) && target.alive;
+    }
+    
+    return false;
+}
+
+function selectBestBotTarget(bot) {
+    const allTargets = [...gameState.food];
+    const allCells = [...Array.from(gameState.players.values()), ...gameState.bots].filter(cell => cell && cell.alive && cell !== bot);
+    
+    // Add cells as potential targets based on bot type
+    allCells.forEach(cell => {
+        const canEat = bot.mass > cell.mass * 1.25;
+        const shouldFear = cell.mass > bot.mass * 1.1;
+        const isSignificantlyLarger = cell.mass > bot.mass * 2.0;
+        
+        // Never target cells that are significantly larger
+        if (isSignificantlyLarger) {
+            return;
+        }
+        
+        if (canEat && Math.random() < bot.aggressionLevel) {
+            allTargets.push(cell);
+        } else if (!shouldFear || Math.random() > bot.fearLevel * 1.5) {
+            if (bot.botType === 'opportunistic' && Math.abs(bot.mass - cell.mass) < 5) {
+                allTargets.push(cell);
+            }
+        }
+    });
+    
+    if (allTargets.length === 0) {
+        return createWanderTarget(bot);
+    }
+    
+    // Find closest target
+    let bestTarget = null;
+    let bestScore = -1;
+    
+    allTargets.forEach(target => {
+        const dx = target.x - bot.x;
+        const dy = target.y - bot.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        let score = 0;
+        
+        if (target.type === 'food') {
+            score = 100 / (distance + 1);
+        } else {
+            const massRatio = target.mass / bot.mass;
+            if (massRatio < 0.8) {
+                score = (200 / (distance + 1)) * (1 - massRatio);
+            } else if (bot.botType === 'opportunistic') {
+                score = 50 / (distance + 1);
+            }
+        }
+        
+        if (score > bestScore) {
+            bestScore = score;
+            bestTarget = target;
+        }
+    });
+    
+    return bestTarget || createWanderTarget(bot);
+}
+
+function createWanderTarget(bot) {
+    bot.wanderAngle += (Math.random() - 0.5) * 0.5;
+    const wanderDistance = 100;
+    
+    return {
+        x: bot.x + Math.cos(bot.wanderAngle) * wanderDistance,
+        y: bot.y + Math.sin(bot.wanderAngle) * wanderDistance,
+        type: 'wander'
+    };
+}
+
+function moveBotTowardsTarget(bot, deltaTime) {
+    if (!bot.target) return;
+    
+    // Check for threats first
+    const threats = findBotThreats(bot);
+    if (threats.length > 0 && Math.random() < bot.fearLevel) {
+        fleeFromThreats(bot, threats);
+        return;
+    }
+    
+    // Move towards target
+    const dx = bot.target.x - bot.x;
+    const dy = bot.target.y - bot.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 5) {
+        const speed = config.baseSpeed / Math.sqrt(bot.mass / 100);
+        const targetVx = (dx / distance) * speed;
+        const targetVy = (dy / distance) * speed;
+        
+        const smoothingFactor = 0.15;
+        bot.vx += (targetVx - bot.vx) * smoothingFactor;
+        bot.vy += (targetVy - bot.vy) * smoothingFactor;
+        
+        // Add slight randomness
+        const randomFactor = 0.1;
+        bot.vx += (Math.random() - 0.5) * randomFactor;
+        bot.vy += (Math.random() - 0.5) * randomFactor;
+    } else {
+        bot.vx *= 0.9;
+        bot.vy *= 0.9;
+    }
+}
+
+function findBotThreats(bot) {
+    const threats = [];
+    const allCells = [...Array.from(gameState.players.values()), ...gameState.bots].filter(cell => cell && cell.alive && cell !== bot);
+    
+    allCells.forEach(cell => {
+        const dx = cell.x - bot.x;
+        const dy = cell.y - bot.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        const canEatUs = cell.mass > bot.mass * 1.1;
+        const isSignificantThreat = cell.mass > bot.mass * 2.0;
+        
+        let detectionRange = 150;
+        if (isSignificantThreat) {
+            detectionRange = 250;
+        } else if (canEatUs) {
+            detectionRange = 200;
+        }
+        
+        if (canEatUs && distance < detectionRange) {
+            const massRatio = cell.mass / bot.mass;
+            const threatWeight = massRatio * (1 / (distance + 1));
+            threats.push({ cell, distance, dx, dy, weight: threatWeight });
+        }
+    });
+    
+    return threats.sort((a, b) => b.weight - a.weight);
+}
+
+function fleeFromThreats(bot, threats) {
+    let fleeX = 0;
+    let fleeY = 0;
+    
+    threats.forEach(threat => {
+        const weight = 1 / (threat.distance + 1);
+        fleeX -= threat.dx * weight;
+        fleeY -= threat.dy * weight;
+    });
+    
+    const fleeLength = Math.sqrt(fleeX * fleeX + fleeY * fleeY);
+    if (fleeLength > 0) {
+        const speed = config.baseSpeed / Math.sqrt(bot.mass / 100) * 1.2;
+        const targetVx = (fleeX / fleeLength) * speed;
+        const targetVy = (fleeY / fleeLength) * speed;
+        
+        const smoothingFactor = 0.25;
+        bot.vx += (targetVx - bot.vx) * smoothingFactor;
+        bot.vy += (targetVy - bot.vy) * smoothingFactor;
+    }
+}
+
+function respawnBot(deadBot) {
+    deadBot.x = Math.random() * gameState.worldWidth;
+    deadBot.y = Math.random() * gameState.worldHeight;
+    deadBot.mass = 20 + Math.random() * 4;
+    deadBot.radius = Math.sqrt(deadBot.mass / Math.PI) * 3;
+    deadBot.alive = true;
+    deadBot.target = null;
+    deadBot.lastDirectionChange = 0;
+    deadBot.score = 0;
+}
+
 // Game logic
 function updateGameState() {
     const currentTime = Date.now();
@@ -162,6 +443,9 @@ function updateGameState() {
         player.radius = Math.sqrt(player.mass / Math.PI) * 3;
     });
     
+    // Update bots
+    updateBots();
+    
     // Check collisions
     checkCollisions();
     
@@ -171,66 +455,74 @@ function updateGameState() {
     }
     
     // Apply passive mass loss (0.2% per second)
-    gameState.players.forEach(player => {
-        if (player.alive) {
+    const allCells = [...Array.from(gameState.players.values()), ...gameState.bots];
+    allCells.forEach(cell => {
+        if (cell.alive) {
             const massLossRate = 0.998;
             const massLossMultiplier = Math.pow(massLossRate, 1 / config.tickRate);
-            player.mass = Math.max(20, player.mass * massLossMultiplier);
+            cell.mass = Math.max(20, cell.mass * massLossMultiplier);
         }
     });
 }
 
 function checkCollisions() {
     const alivePlayers = Array.from(gameState.players.values()).filter(p => p.alive);
+    const aliveBots = gameState.bots.filter(b => b.alive);
+    const allCells = [...alivePlayers, ...aliveBots];
     
-    // Player vs Food collisions
-    alivePlayers.forEach(player => {
+    // Cell vs Food collisions
+    allCells.forEach(cell => {
         for (let i = gameState.food.length - 1; i >= 0; i--) {
             const food = gameState.food[i];
-            const dx = player.x - food.x;
-            const dy = player.y - food.y;
+            const dx = cell.x - food.x;
+            const dy = cell.y - food.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            if (distance < player.radius + food.radius) {
+            if (distance < cell.radius + food.radius) {
                 // Eat food
-                player.mass += food.mass;
-                player.score += food.mass;
+                cell.mass += food.mass;
+                cell.score += food.mass;
                 gameState.food.splice(i, 1);
             }
         }
     });
     
-    // Player vs Player collisions
-    for (let i = 0; i < alivePlayers.length; i++) {
-        for (let j = i + 1; j < alivePlayers.length; j++) {
-            const player1 = alivePlayers[i];
-            const player2 = alivePlayers[j];
+    // Cell vs Cell collisions
+    for (let i = 0; i < allCells.length; i++) {
+        for (let j = i + 1; j < allCells.length; j++) {
+            const cell1 = allCells[i];
+            const cell2 = allCells[j];
             
-            const dx = player1.x - player2.x;
-            const dy = player1.y - player2.y;
+            const dx = cell1.x - cell2.x;
+            const dy = cell1.y - cell2.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            if (distance < Math.max(player1.radius, player2.radius)) {
+            if (distance < Math.max(cell1.radius, cell2.radius)) {
                 let predator, prey;
                 const requiredRatio = 1.10;
                 
-                if (player1.mass > player2.mass * requiredRatio) {
-                    predator = player1;
-                    prey = player2;
-                } else if (player2.mass > player1.mass * requiredRatio) {
-                    predator = player2;
-                    prey = player1;
+                if (cell1.mass > cell2.mass * requiredRatio) {
+                    predator = cell1;
+                    prey = cell2;
+                } else if (cell2.mass > cell1.mass * requiredRatio) {
+                    predator = cell2;
+                    prey = cell1;
                 } else {
                     continue;
                 }
                 
                 // Transfer mass
                 predator.mass += prey.mass;
-                predator.score += 50;
+                predator.score += (prey.type === 'bot' ? 10 : 50);
                 
                 // Kill prey
                 prey.alive = false;
                 prey.mass = 0;
+                
+                // Respawn bot if killed
+                if (prey.type === 'bot') {
+                    setTimeout(() => respawnBot(prey), 3000);
+                }
             }
         }
     }
@@ -302,6 +594,18 @@ io.on('connection', (socket) => {
         }
     });
     
+    socket.on('playerMassCheat', () => {
+        const player = gameState.players.get(socket.id);
+        if (player && player.alive) {
+            // Add 50 mass (same as single-player)
+            const massGain = 50;
+            player.mass += massGain;
+            player.score += massGain; // Also add to score
+            
+            console.log(`Player ${player.name} used mass cheat: +${massGain} mass (Total: ${player.mass})`);
+        }
+    });
+    
     socket.on('disconnect', () => {
         console.log(`Player disconnected: ${socket.id}`);
         removePlayer(socket.id);
@@ -315,6 +619,7 @@ function gameLoop() {
     // Send game state to all connected clients
     const gameStateData = {
         players: Array.from(gameState.players.values()),
+        bots: gameState.bots.filter(bot => bot.alive),
         food: gameState.food,
         viruses: gameState.viruses,
         timestamp: Date.now()
@@ -334,10 +639,11 @@ app.get('/multiplayer', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Singleplayer: http://localhost:${PORT}`);
     console.log(`Multiplayer: http://localhost:${PORT}/multiplayer`);
+    console.log(`LAN Access: http://[YOUR_IP]:${PORT}/multiplayer`);
     
     // Initialize game world
     initializeGameWorld();

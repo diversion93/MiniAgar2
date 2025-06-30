@@ -1502,8 +1502,8 @@ class MiniAgar {
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
                 if (distance < cell.radius + virus.radius) {
-                    // Only cells with mass > 50 are affected by viruses, and only if virus is fully grown
-                    if (cell.mass > 50 && virus.isDangerous()) {
+                    // Only cells with mass > 35 are affected by viruses, and only if virus is fully grown
+                    if (cell.mass > 35 && virus.isDangerous()) {
                         // Handle virus splitting for large cells
                         this.handleVirusSplitting(cell, virus);
                         
@@ -1975,8 +1975,8 @@ class MiniAgar {
         document.getElementById('finalMass').textContent = Math.round(finalPlayer.mass);
         document.getElementById('botsKilled').textContent = botsKilled;
         
-        // Show game over screen
-        setTimeout(() => this.showGameOverScreen(), 1000);
+        // Show game over screen automatically
+        this.showGameOverScreen();
     }
     
     render() {
@@ -3266,8 +3266,8 @@ class Virus {
     }
 
     render(ctx) {
-        // Pulsing effect
-        this.pulsePhase += 0.05;
+        // Pulsing effect - slowed down
+        this.pulsePhase += 0.02;
         const pulseScale = 1 + Math.sin(this.pulsePhase) * 0.1;
         const currentRadius = this.radius * pulseScale;
 

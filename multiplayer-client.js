@@ -25,6 +25,7 @@ class MultiplayerAgar {
         
         // Game entities (from server)
         this.players = [];
+        this.bots = [];
         this.food = [];
         this.viruses = [];
         
@@ -127,6 +128,7 @@ class MultiplayerAgar {
         
         // Update game entities
         this.players = data.players || [];
+        this.bots = data.bots || [];
         this.food = data.food || [];
         this.viruses = data.viruses || [];
         
@@ -221,6 +223,11 @@ class MultiplayerAgar {
                     this.splitPlayer();
                 }
                 break;
+            case 'KeyC':
+                if (this.gameState === 'playing' && this.localPlayer && this.localPlayer.alive) {
+                    this.applyMassCheat();
+                }
+                break;
         }
     }
     
@@ -233,6 +240,54 @@ class MultiplayerAgar {
     ejectMass() {
         if (this.socket && this.connected) {
             this.socket.emit('playerEject');
+        }
+    }
+    
+    applyMassCheat() {
+        if (this.socket && this.connected) {
+            this.socket.emit('playerMassCheat');
+            
+            // Create visual feedback with green particles
+            this.createSplitParticles(this.localPlayer.x, this.localPlayer.y, '#00ff00');
+            
+            console.log('Mass cheat applied: +50 mass');
+        }
+    }
+    
+    createSplitParticles(x, y, color) {
+        // Create particle effect for visual feedback
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const particle = {
+                x: x + Math.cos(angle) * 15,
+                y: y + Math.sin(angle) * 15,
+                vx: Math.cos(angle) * 150,
+                vy: Math.sin(angle) * 150,
+                color: color,
+                life: 0.8,
+                maxLife: 0.8,
+                size: 3,
+                update: function(deltaTime) {
+                    this.x += this.vx * deltaTime;
+                    this.y += this.vy * deltaTime;
+                    this.vx *= 0.98;
+                    this.vy *= 0.98;
+                    this.life -= deltaTime;
+                },
+                render: function(ctx) {
+                    if (this.life <= 0) return;
+                    const alpha = this.life / this.maxLife;
+                    const currentSize = this.size * alpha;
+                    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, currentSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            };
+            
+            // Add to particles array if it exists, otherwise create it
+            if (!this.particles) this.particles = [];
+            this.particles.push(particle);
         }
     }
     
@@ -331,6 +386,14 @@ class MultiplayerAgar {
     update(deltaTime) {
         // Apply local prediction for immediate feedback
         this.applyLocalPrediction(deltaTime);
+        
+        // Update particles
+        if (this.particles) {
+            this.particles = this.particles.filter(particle => {
+                particle.update(deltaTime);
+                return particle.life > 0;
+            });
+        }
         
         // Update camera
         this.updateCamera();
@@ -431,25 +494,25 @@ class MultiplayerAgar {
     }
     
     updateLeaderboard() {
-        const sortedPlayers = [...this.players].sort((a, b) => (b.mass || 0) - (a.mass || 0));
+        const allCells = [...this.players, ...this.bots].sort((a, b) => (b.mass || 0) - (a.mass || 0));
         const leaderboardList = document.getElementById('leaderboardList');
         leaderboardList.innerHTML = '';
         
-        const topPlayers = sortedPlayers.slice(0, 5);
+        const topCells = allCells.slice(0, 5);
         
-        topPlayers.forEach((player, index) => {
+        topCells.forEach((cell, index) => {
             const item = document.createElement('div');
-            item.className = `leaderboard-item ${player.id === this.playerId ? 'player' : 'bot'}`;
+            item.className = `leaderboard-item ${cell.id === this.playerId ? 'player' : 'bot'}`;
             
             const rank = document.createElement('span');
             rank.className = 'leaderboard-rank';
             rank.textContent = `${index + 1}.`;
             
             const name = document.createElement('span');
-            name.textContent = player.name || 'Player';
+            name.textContent = cell.name || 'Player';
             
             const mass = document.createElement('span');
-            mass.textContent = Math.round(player.mass || 0);
+            mass.textContent = Math.round(cell.mass || 0);
             
             item.appendChild(rank);
             item.appendChild(name);
@@ -501,9 +564,14 @@ class MultiplayerAgar {
         // Draw viruses
         this.viruses.forEach(virus => this.renderVirus(virus));
         
-        // Draw players
-        const sortedPlayers = [...this.players].sort((a, b) => (a.radius || 0) - (b.radius || 0));
-        sortedPlayers.forEach(player => this.renderPlayer(player));
+        // Draw particles
+        if (this.particles) {
+            this.particles.forEach(particle => particle.render(this.ctx));
+        }
+        
+        // Draw players and bots
+        const allCells = [...this.players, ...this.bots].sort((a, b) => (a.radius || 0) - (b.radius || 0));
+        allCells.forEach(cell => this.renderPlayer(cell));
         
         this.ctx.restore();
         
@@ -547,28 +615,65 @@ class MultiplayerAgar {
     }
     
     renderVirus(virus) {
+        // Add pulsing effect (simulate the pulse phase from single-player)
+        const pulsePhase = (Date.now() * 0.05) % (Math.PI * 2);
+        const pulseScale = 1 + Math.sin(pulsePhase) * 0.1;
+        const currentRadius = virus.radius * pulseScale;
+
+        // Draw glow effect
+        const gradient = this.ctx.createRadialGradient(virus.x, virus.y, 0, virus.x, virus.y, currentRadius * 2);
+        gradient.addColorStop(0, virus.color + '60');
+        gradient.addColorStop(1, virus.color + '00');
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(virus.x, virus.y, currentRadius * 2, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Draw main virus body (green circle)
         this.ctx.fillStyle = virus.color;
         this.ctx.beginPath();
-        this.ctx.arc(virus.x, virus.y, virus.radius, 0, Math.PI * 2);
+        this.ctx.arc(virus.x, virus.y, currentRadius, 0, Math.PI * 2);
         this.ctx.fill();
-        
-        // Draw spikes
+
+        // Draw 16 spikes with alternating lengths
         this.ctx.fillStyle = virus.color;
         this.ctx.strokeStyle = '#007700';
         this.ctx.lineWidth = 1;
-        
+
         for (let i = 0; i < 16; i++) {
             const angle = (i / 16) * Math.PI * 2;
-            const spikeLength = (i % 2 === 0) ? virus.radius / 2 : virus.radius / 3;
             
-            const spikeEndX = virus.x + Math.cos(angle) * (virus.radius + spikeLength);
-            const spikeEndY = virus.y + Math.sin(angle) * (virus.radius + spikeLength);
+            // Alternating spike lengths: even indices = long (R/2), odd indices = short (R/3)
+            const spikeLength = (i % 2 === 0) ? currentRadius / 2 : currentRadius / 3;
             
+            // Calculate spike end position
+            const spikeEndX = virus.x + Math.cos(angle) * (currentRadius + spikeLength);
+            const spikeEndY = virus.y + Math.sin(angle) * (currentRadius + spikeLength);
+            
+            // Draw spike line
             this.ctx.beginPath();
-            this.ctx.moveTo(virus.x + Math.cos(angle) * virus.radius, virus.y + Math.sin(angle) * virus.radius);
+            this.ctx.moveTo(virus.x + Math.cos(angle) * currentRadius, virus.y + Math.sin(angle) * currentRadius);
             this.ctx.lineTo(spikeEndX, spikeEndY);
             this.ctx.stroke();
+            
+            // Draw small ellipse at spike end
+            const ellipseSize = currentRadius / 8;
+            this.ctx.fillStyle = virus.color;
+            this.ctx.beginPath();
+            this.ctx.save();
+            this.ctx.translate(spikeEndX, spikeEndY);
+            this.ctx.rotate(angle + Math.PI / 2);
+            this.ctx.scale(1, 0.6);
+            this.ctx.arc(0, 0, ellipseSize, 0, Math.PI * 2);
+            this.ctx.restore();
+            this.ctx.fill();
         }
+
+        // Add subtle inner detail
+        this.ctx.fillStyle = '#00CC00';
+        this.ctx.beginPath();
+        this.ctx.arc(virus.x, virus.y, currentRadius * 0.7, 0, Math.PI * 2);
+        this.ctx.fill();
     }
     
     renderPlayer(player) {
@@ -616,19 +721,21 @@ class MultiplayerAgar {
         this.minimapCtx.lineWidth = 1;
         this.minimapCtx.strokeRect(0, 0, this.worldWidth * scale, this.worldHeight * scale);
         
-        this.players.forEach(player => {
-            if (!player.alive) return;
+        // Draw all cells (players and bots)
+        const allCells = [...this.players, ...this.bots];
+        allCells.forEach(cell => {
+            if (!cell.alive) return;
             
-            const x = player.x * scale;
-            const y = player.y * scale;
-            const radius = Math.max(1, player.radius * scale * 0.5);
+            const x = cell.x * scale;
+            const y = cell.y * scale;
+            const radius = Math.max(1, cell.radius * scale * 0.5);
             
-            this.minimapCtx.fillStyle = player.color;
+            this.minimapCtx.fillStyle = cell.color;
             this.minimapCtx.beginPath();
             this.minimapCtx.arc(x, y, radius, 0, Math.PI * 2);
             this.minimapCtx.fill();
             
-            if (player.id === this.playerId) {
+            if (cell.id === this.playerId) {
                 this.minimapCtx.strokeStyle = '#ffffff';
                 this.minimapCtx.lineWidth = 2;
                 this.minimapCtx.stroke();
