@@ -85,20 +85,48 @@ class MultiplayerAgar {
     initializeSocket() {
         this.socket = io();
         
+        // Connection tracking
+        this.connectionStats = {
+            connectTime: 0,
+            lastPingTime: 0,
+            pingInterval: null,
+            latency: 0,
+            stateUpdatesReceived: 0,
+            lastStateTime: 0,
+            avgUpdateInterval: 0,
+            lastLogTime: 0
+        };
+        
         this.socket.on('connect', () => {
-            console.log('Server Connect:', { timestamp: Date.now(), status: 'connected' });
+            this.connectionStats.connectTime = Date.now();
+            console.log('CLIENT: Connected to server', { 
+                timestamp: this.connectionStats.connectTime,
+                socketId: this.socket.id 
+            });
             this.connected = true;
             this.hideConnectionStatus();
+            
+            // Start ping monitoring
+            this.startPingMonitoring();
         });
         
         this.socket.on('disconnect', () => {
-            console.log('Server Disconnect:', { timestamp: Date.now(), status: 'disconnected' });
+            console.log('CLIENT: Disconnected from server', { 
+                timestamp: Date.now(),
+                connectionDuration: Date.now() - this.connectionStats.connectTime
+            });
             this.connected = false;
             this.showConnectionStatus('Verbindung verloren...');
+            
+            // Stop ping monitoring
+            if (this.connectionStats.pingInterval) {
+                clearInterval(this.connectionStats.pingInterval);
+                this.connectionStats.pingInterval = null;
+            }
         });
         
         this.socket.on('gameJoined', (data) => {
-            console.log('Server GameJoined:', { 
+            console.log('CLIENT: Game joined successfully', { 
                 playerId: data.playerId, 
                 worldSize: `${data.worldWidth}x${data.worldHeight}`,
                 timestamp: Date.now() 
@@ -109,31 +137,107 @@ class MultiplayerAgar {
         });
         
         this.socket.on('gameState', (data) => {
-            console.log('Server Update:', { 
-                players: data.players.length, 
-                food: data.food.length, 
-                timestamp: data.timestamp 
-            });
+            this.trackStateUpdate(data);
             this.handleServerUpdate(data);
         });
         
         this.socket.on('connect_error', (error) => {
-            console.log('Server Error:', { error: error.message, timestamp: Date.now() });
+            console.log('CLIENT: Connection error', { 
+                error: error.message, 
+                timestamp: Date.now() 
+            });
             this.showConnectionStatus('Verbindungsfehler');
         });
+        
+        // Add pong handler for latency measurement
+        this.socket.on('pong', (latency) => {
+            this.connectionStats.latency = latency;
+        });
+    }
+    
+    startPingMonitoring() {
+        // Ping server every 2 seconds to measure latency
+        this.connectionStats.pingInterval = setInterval(() => {
+            if (this.connected) {
+                this.connectionStats.lastPingTime = Date.now();
+                this.socket.emit('ping');
+            }
+        }, 2000);
+    }
+    
+    trackStateUpdate(data) {
+        const currentTime = Date.now();
+        this.connectionStats.stateUpdatesReceived++;
+        
+        // Calculate update interval
+        if (this.connectionStats.lastStateTime > 0) {
+            const interval = currentTime - this.connectionStats.lastStateTime;
+            this.connectionStats.avgUpdateInterval = 
+                (this.connectionStats.avgUpdateInterval * 0.9) + (interval * 0.1);
+        }
+        this.connectionStats.lastStateTime = currentTime;
+        
+        // Log connection stats every 4 seconds to prevent overflow
+        if (currentTime - this.connectionStats.lastLogTime > 4000) {
+            const serverLatency = data.timestamp ? currentTime - data.timestamp : 'unknown';
+            
+            console.log('CLIENT STATUS:', {
+                connected: this.connected,
+                latency: `${this.connectionStats.latency}ms`,
+                serverLatency: typeof serverLatency === 'number' ? `${serverLatency}ms` : serverLatency,
+                avgUpdateInterval: `${Math.round(this.connectionStats.avgUpdateInterval)}ms`,
+                updatesReceived: this.connectionStats.stateUpdatesReceived,
+                serverTick: data.serverTick || 'unknown',
+                entities: {
+                    players: data.players?.length || 0,
+                    bots: data.bots?.length || 0,
+                    food: data.food?.length || 0,
+                    viruses: data.viruses?.length || 0
+                }
+            });
+            
+            this.connectionStats.lastLogTime = currentTime;
+        }
     }
     
     handleServerUpdate(data) {
         this.lastServerUpdate = Date.now();
         
-        // Update game entities
+        // Store previous local player data for comparison
+        const previousLocalPlayer = this.localPlayer ? { ...this.localPlayer } : null;
+        
+        // Update game entities - TRUST SERVER COMPLETELY
         this.players = data.players || [];
         this.bots = data.bots || [];
         this.food = data.food || [];
         this.viruses = data.viruses || [];
         
-        // Find and update local player
+        // Find and update local player - NO CLIENT-SIDE MODIFICATIONS
         this.localPlayer = this.players.find(p => p.id === this.playerId);
+        
+        // Log mass changes for debugging
+        if (previousLocalPlayer && this.localPlayer) {
+            if (Math.abs(previousLocalPlayer.mass - this.localPlayer.mass) > 0.5) {
+                console.log(`CLIENT: Mass change detected: ${Math.round(previousLocalPlayer.mass)} -> ${Math.round(this.localPlayer.mass)} (${this.localPlayer.mass > previousLocalPlayer.mass ? '+' : ''}${Math.round(this.localPlayer.mass - previousLocalPlayer.mass)})`);
+            }
+            
+            if (previousLocalPlayer.alive !== this.localPlayer.alive) {
+                console.log(`CLIENT: Player alive status changed: ${previousLocalPlayer.alive} -> ${this.localPlayer.alive}`);
+            }
+        }
+        
+        // Log if player is dead
+        if (this.localPlayer && !this.localPlayer.alive) {
+            console.log(`CLIENT: Local player is DEAD - alive: ${this.localPlayer.alive}, mass: ${this.localPlayer.mass}`);
+        }
+        
+        // Log if no local player found
+        if (!this.localPlayer) {
+            console.log(`CLIENT: No local player found! PlayerId: ${this.playerId}, Players in state: ${this.players.length}`);
+            this.players.forEach(p => {
+                console.log(`  Player: ${p.name} (${p.id}) - alive: ${p.alive}`);
+            });
+        }
         
         // Update UI
         this.updateUI();
@@ -408,7 +512,7 @@ class MultiplayerAgar {
     applyLocalPrediction(deltaTime) {
         if (!this.localPlayer || !this.localPlayer.alive) return;
         
-        // Apply immediate local movement for responsive feel
+        // ONLY apply position prediction - NEVER modify mass, radius, or other server-controlled properties
         const dx = this.localInput.targetX - this.localPlayer.x;
         const dy = this.localInput.targetY - this.localPlayer.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -418,22 +522,26 @@ class MultiplayerAgar {
             const targetVx = (dx / distance) * speed;
             const targetVy = (dy / distance) * speed;
             
-            // Apply smooth local movement
-            const smoothing = 0.25;
+            // Apply smooth local movement prediction ONLY for position
+            const smoothing = 0.15; // Reduced smoothing to trust server more
             if (!this.localPlayer.vx) this.localPlayer.vx = 0;
             if (!this.localPlayer.vy) this.localPlayer.vy = 0;
             
             this.localPlayer.vx += (targetVx - this.localPlayer.vx) * smoothing;
             this.localPlayer.vy += (targetVy - this.localPlayer.vy) * smoothing;
             
-            // Apply local position update for immediate feedback
-            this.localPlayer.x += this.localPlayer.vx * deltaTime * 60;
-            this.localPlayer.y += this.localPlayer.vy * deltaTime * 60;
+            // Apply minimal local position update for immediate feedback
+            const positionUpdate = deltaTime * 30; // Reduced from 60 to trust server more
+            this.localPlayer.x += this.localPlayer.vx * positionUpdate;
+            this.localPlayer.y += this.localPlayer.vy * positionUpdate;
             
             // Keep in bounds
             this.localPlayer.x = Math.max(this.localPlayer.radius, Math.min(this.worldWidth - this.localPlayer.radius, this.localPlayer.x));
             this.localPlayer.y = Math.max(this.localPlayer.radius, Math.min(this.worldHeight - this.localPlayer.radius, this.localPlayer.y));
         }
+        
+        // DO NOT modify mass, radius, score, or any other server-controlled properties here
+        // The server is the authoritative source for all game state except immediate position prediction
     }
     
     updateCamera() {
@@ -522,9 +630,26 @@ class MultiplayerAgar {
     }
     
     checkGameOver() {
-        if (!this.localPlayer || this.localPlayer.alive) return;
+        // More robust game over detection
+        if (!this.localPlayer) {
+            console.log('CLIENT: checkGameOver - no local player found');
+            return;
+        }
+        
+        if (this.localPlayer.alive) {
+            return; // Player is still alive
+        }
+        
+        // Player is dead - trigger game over
+        console.log(`CLIENT: GAME OVER DETECTED - Player ${this.localPlayer.name} is dead (alive: ${this.localPlayer.alive})`);
+        
+        if (this.gameState === 'gameOver') {
+            console.log('CLIENT: Game over already triggered, skipping');
+            return; // Already in game over state
+        }
         
         this.gameState = 'gameOver';
+        console.log('CLIENT: Setting game state to gameOver');
         
         const gameTime = Math.floor((Date.now() - this.gameStartTime) / 1000);
         const minutes = Math.floor(gameTime / 60);
@@ -536,6 +661,7 @@ class MultiplayerAgar {
         document.getElementById('finalMass').textContent = Math.round(this.localPlayer.mass || 0);
         document.getElementById('playersKilled').textContent = Math.floor((this.localPlayer.score || 0) / 50);
         
+        console.log('CLIENT: Showing game over screen in 1 second');
         setTimeout(() => this.showGameOverScreen(), 1000);
     }
     
@@ -615,8 +741,8 @@ class MultiplayerAgar {
     }
     
     renderVirus(virus) {
-        // Add pulsing effect (simulate the pulse phase from single-player)
-        const pulsePhase = (Date.now() * 0.05) % (Math.PI * 2);
+        // Add pulsing effect with much slower speed (0.5 Hz = 0.003 multiplier)
+        const pulsePhase = (Date.now() * 0.003) % (Math.PI * 2);
         const pulseScale = 1 + Math.sin(pulsePhase) * 0.1;
         const currentRadius = virus.radius * pulseScale;
 

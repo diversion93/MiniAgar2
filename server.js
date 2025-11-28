@@ -395,7 +395,7 @@ function fleeFromThreats(bot, threats) {
 function respawnBot(deadBot) {
     deadBot.x = Math.random() * gameState.worldWidth;
     deadBot.y = Math.random() * gameState.worldHeight;
-    deadBot.mass = 20 + Math.random() * 4;
+    deadBot.mass = Math.trunc(20 + Math.random() * 4);
     deadBot.radius = Math.sqrt(deadBot.mass / Math.PI) * 3;
     deadBot.alive = true;
     deadBot.target = null;
@@ -454,13 +454,21 @@ function updateGameState() {
         spawnFood();
     }
     
-    // Apply passive mass loss (0.2% per second)
+    // Apply passive mass loss (slow but noticeable - approximately 0.5% per second)
     const allCells = [...Array.from(gameState.players.values()), ...gameState.bots];
     allCells.forEach(cell => {
-        if (cell.alive) {
-            const massLossRate = 0.998;
-            const massLossMultiplier = Math.pow(massLossRate, 1 / config.tickRate);
-            cell.mass = Math.max(20, cell.mass * massLossMultiplier);
+        if (cell.alive && cell.mass > 20) {
+            // Balanced mass loss: 0.9999 per tick = ~0.5% per second
+            const massLossRate = 0.9999;
+            const newMass = Math.max(20, cell.mass * massLossRate);
+            
+            // Always apply mass loss (no threshold condition)
+            cell.mass = Math.trunc(newMass);
+            
+            // Log mass loss for debugging (only for players, not bots)
+            if (cell.type !== 'bot' && Math.abs(cell.mass - newMass) > 0.01) {
+                console.log(`Mass loss: ${cell.name || cell.id} lost ${(cell.mass - newMass).toFixed(3)} mass`);
+            }
         }
     });
 }
@@ -480,9 +488,15 @@ function checkCollisions() {
             
             if (distance < cell.radius + food.radius) {
                 // Eat food
-                cell.mass += food.mass;
-                cell.score += food.mass;
+                const oldMass = cell.mass;
+                cell.mass = Math.trunc(cell.mass + food.mass);
+                cell.score = Math.trunc(cell.score + food.mass);
                 gameState.food.splice(i, 1);
+                
+                // Log food consumption only for players, not bots
+                if (cell.type !== 'bot') {
+                    console.log(`Food eaten: ${cell.name || cell.id} mass ${Math.round(oldMass)} -> ${Math.round(cell.mass)}`);
+                }
             }
         }
     });
@@ -511,16 +525,29 @@ function checkCollisions() {
                     continue;
                 }
                 
-                // Transfer mass
-                predator.mass += prey.mass;
-                predator.score += (prey.type === 'bot' ? 10 : 50);
+                // Log collision details
+                console.log(`COLLISION: ${predator.name || predator.id} (${predator.mass}) eats ${prey.name || prey.id} (${prey.mass})`);
                 
-                // Kill prey
+                // Transfer mass
+                const oldPredatorMass = predator.mass;
+                predator.mass = Math.trunc(predator.mass + prey.mass);
+                predator.score = Math.trunc(predator.score + (prey.type === 'bot' ? 10 : 50));
+                
+                // Kill prey - CRITICAL STATE CHANGE
                 prey.alive = false;
                 prey.mass = 0;
                 
+                // Log the kill event explicitly
+                console.log(`PLAYER KILLED: ${prey.name || prey.id} is now DEAD. Predator ${predator.name || predator.id} mass: ${oldPredatorMass} -> ${predator.mass}`);
+                
+                // If a player was killed, log it prominently
+                if (prey.type === 'player' || gameState.players.has(prey.id)) {
+                    console.log(`*** GAME OVER EVENT: Player ${prey.name || prey.id} has been eliminated! ***`);
+                }
+                
                 // Respawn bot if killed
                 if (prey.type === 'bot') {
+                    console.log(`Bot ${prey.name} will respawn in 3 seconds`);
                     setTimeout(() => respawnBot(prey), 3000);
                 }
             }
@@ -567,7 +594,7 @@ io.on('connection', (socket) => {
         const player = gameState.players.get(socket.id);
         if (player && player.alive && player.mass >= 25) {
             // Simple split: reduce mass by half
-            player.mass = player.mass / 2;
+            player.mass = Math.trunc(player.mass / 2);
             console.log(`Player ${player.name} split, new mass: ${player.mass}`);
         }
     });
@@ -576,8 +603,8 @@ io.on('connection', (socket) => {
         const player = gameState.players.get(socket.id);
         if (player && player.alive && player.mass >= 30) {
             // Eject mass as food
-            const massToEject = Math.min(8, player.mass * 0.1);
-            player.mass -= massToEject;
+            const massToEject = Math.trunc(Math.min(8, player.mass * 0.1));
+            player.mass = Math.trunc(player.mass - massToEject);
             
             // Create ejected food
             const ejectedFood = {
@@ -599,11 +626,15 @@ io.on('connection', (socket) => {
         if (player && player.alive) {
             // Add 50 mass (same as single-player)
             const massGain = 50;
-            player.mass += massGain;
-            player.score += massGain; // Also add to score
+            player.mass = Math.trunc(player.mass + massGain);
+            player.score = Math.trunc(player.score + massGain); // Also add to score
             
             console.log(`Player ${player.name} used mass cheat: +${massGain} mass (Total: ${player.mass})`);
         }
+    });
+    
+    socket.on('ping', () => {
+        socket.emit('pong');
     });
     
     socket.on('disconnect', () => {
@@ -612,20 +643,85 @@ io.on('connection', (socket) => {
     });
 });
 
-// Game loop
+// Helper function to create clean state objects without circular references
+function createCleanStateObject(entity) {
+    if (!entity) return null;
+    
+    return {
+        id: entity.id,
+        name: entity.name,
+        x: Math.round(entity.x * 100) / 100, // Round to 2 decimal places
+        y: Math.round(entity.y * 100) / 100,
+        mass: Math.trunc(entity.mass), // Truncate to whole number
+        radius: Math.round(entity.radius * 100) / 100,
+        color: entity.color,
+        alive: entity.alive,
+        score: Math.round(entity.score || 0),
+        type: entity.type || 'player'
+    };
+}
+
+// Game loop with improved logging and performance tracking
+let gameLoopCounter = 0;
+let lastLogTime = 0;
+let lastStateEmitTime = 0;
+
 function gameLoop() {
+    const loopStartTime = Date.now();
+    gameLoopCounter++;
+    
     updateGameState();
     
     // Send game state to all connected clients
+    const alivePlayers = Array.from(gameState.players.values()).filter(p => p.alive);
+    const deadPlayers = Array.from(gameState.players.values()).filter(p => !p.alive);
+    
+    // Create clean state objects to avoid circular references
+    const cleanPlayers = Array.from(gameState.players.values()).map(createCleanStateObject);
+    const cleanBots = gameState.bots.filter(bot => bot.alive).map(createCleanStateObject);
+    const cleanFood = gameState.food.map(food => ({
+        id: food.id,
+        x: Math.round(food.x * 100) / 100,
+        y: Math.round(food.y * 100) / 100,
+        radius: food.radius,
+        color: food.color,
+        mass: food.mass || 1
+    }));
+    const cleanViruses = gameState.viruses.map(virus => ({
+        id: virus.id,
+        x: Math.round(virus.x * 100) / 100,
+        y: Math.round(virus.y * 100) / 100,
+        radius: virus.radius,
+        color: virus.color,
+        isFullyGrown: virus.isFullyGrown
+    }));
+    
     const gameStateData = {
-        players: Array.from(gameState.players.values()),
-        bots: gameState.bots.filter(bot => bot.alive),
-        food: gameState.food,
-        viruses: gameState.viruses,
-        timestamp: Date.now()
+        players: cleanPlayers,
+        bots: cleanBots,
+        food: cleanFood,
+        viruses: cleanViruses,
+        timestamp: Date.now(),
+        serverTick: gameLoopCounter
     };
     
+    // Emit state to all clients
+    const emitStartTime = Date.now();
     io.emit('gameState', gameStateData);
+    const emitDuration = Date.now() - emitStartTime;
+    lastStateEmitTime = Date.now();
+    
+    // Log performance and state every 5 seconds in one line
+    const currentTime = Date.now();
+    if (currentTime - lastLogTime > 5000) {
+        const loopDuration = Date.now() - loopStartTime;
+        const connectedClients = io.engine.clientsCount;
+        const avgTickRate = Math.round(gameLoopCounter / ((currentTime - serverStartTime) / 1000));
+        
+        console.log(`SERVER [${gameLoopCounter}]: ${connectedClients} clients, ${alivePlayers.length}/${deadPlayers.length} players, ${cleanBots.length} bots, ${cleanFood.length} food, ${cleanViruses.length} viruses, ${loopDuration}ms loop, ${emitDuration}ms emit, ${avgTickRate}Hz`);
+        
+        lastLogTime = currentTime;
+    }
 }
 
 // Routes
@@ -639,15 +735,21 @@ app.get('/multiplayer', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
+let serverStartTime = 0;
+
 server.listen(PORT, '0.0.0.0', () => {
+    serverStartTime = Date.now();
     console.log(`Server running on port ${PORT}`);
     console.log(`Singleplayer: http://localhost:${PORT}`);
     console.log(`Multiplayer: http://localhost:${PORT}/multiplayer`);
     console.log(`LAN Access: http://[YOUR_IP]:${PORT}/multiplayer`);
+    console.log(`Server tick rate: ${config.tickRate} Hz`);
+    console.log(`Max players: ${config.maxPlayers}`);
     
     // Initialize game world
     initializeGameWorld();
     
     // Start game loop
     setInterval(gameLoop, 1000 / config.tickRate);
+    console.log(`Game loop started at ${new Date().toISOString()}`);
 });

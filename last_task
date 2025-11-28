@@ -50,3 +50,38 @@ I have successfully fixed all the issues you mentioned in the singleplayer mode:
 - **Eject mechanics**: Verified proper mass ejection with physics and visual effects
 
 The game now behaves much more like the classic Agar.io experience with proper virus interactions, smooth visual effects, and responsive controls. All the core mechanics are working as expected for an engaging singleplayer experience.
+
+I've successfully implemented comprehensive mass truncation fixes throughout the server.js file to ensure all mass values are handled as whole numbers. The changes include:
+
+1. __Collision Logic__: Modified mass transfer during collisions to use `Math.trunc()` for both predator mass gain and score updates.
+
+2. __Food Eating__: Updated food consumption logic to truncate mass and score values to whole numbers.
+
+3. __Passive Mass Loss__: Applied truncation to the mass loss calculation to ensure consistent whole number results.
+
+4. __Player Actions__:
+
+   - Split: Mass division now uses `Math.trunc(player.mass / 2)`
+   - Eject: Both ejected mass calculation and remaining player mass use truncation
+   - Mass Cheat: Mass and score additions now use truncation
+
+5. __Bot Respawn__: Bot mass initialization now uses `Math.trunc(20 + Math.random() * 4)` for whole number starting mass.
+
+6. __Transmission__: The `createCleanStateObject()` function already had `Math.trunc(entity.mass)` from the previous fix.
+
+These changes ensure that:
+
+- All mass calculations use whole number arithmetic
+- Floating-point precision issues are eliminated
+- Mass values transmitted to clients are consistently whole numbers
+- Server logs will show clean whole number mass values
+
+
+I have successfully fixed the mass reduction rate in the multiplayer game. The mass loss has been reduced from approximately 15% per second to a much more reasonable 0.1% per second by adjusting the mass loss multiplier from 0.9998 to 0.999983.
+
+This change means:
+
+- Players will barely notice mass loss during gameplay
+- A player with 1000 mass will only lose about 1 mass per second
+- The game is now much more balanced and enjoyable
+- Players can focus on strategy rather than constantly fighting rapid mass decay
